@@ -1,0 +1,519 @@
+# ============================================================================
+# 01_preprocessing.R
+# ============================================================================
+# Input:  Gene expression matrix (genes x samples)
+# Output: Filtered & normalized matrix + top 1000 variable genes
+# ============================================================================
+
+library(limma)
+
+input_file  <- "data/expr_matrix.txt"   # modify before running
+output_dir  <- "results/"
+
+rt <- read.table(input_file, sep="	", header=T, check.names=F, row.names=1)
+expr <- as.matrix(rt)
+
+# filter low-expression genes (keep top 80%)
+keep <- rowMeans(expr) > quantile(rowMeans(expr), 0.2)
+expr_f <- expr[keep, ]
+
+# normalize
+expr_norm <- normalizeBetweenArrays(expr_f)
+
+# top 1000 variable genes by MAD
+mads <- apply(expr_norm, 1, mad)
+expr_top <- expr_norm[rev(order(mads))[1:1000], ]
+
+dir.create(output_dir, showWarnings=F, recursive=T)
+write.table(expr_norm, file=file.path(output_dir, "expr_normalized.txt"), sep="	", quote=F, col.names=NA)
+write.table(expr_top,  file=file.path(output_dir, "top1000_genes.txt"),    sep="	", quote=F, col.names=NA)
+
+
+# ============================================================================
+# 02_clustering.R
+# ============================================================================
+# Input:  Normalized expression matrix
+# Output: Clustering results + heatmaps + NMF/ConsensusClusterPlus outputs
+# ============================================================================
+
+library(limma)
+library(pheatmap)
+library(factoextra)
+library(cluster)
+library(NMF)
+library(ConsensusClusterPlus)
+
+input_file  <- "results/expr_normalized.txt"
+output_dir  <- "results/clustering/"
+
+dir.create(output_dir, showWarnings=F, recursive=T)
+
+expr <- read.table(input_file, sep="	", header=T, row.names=1, check.names=F)
+expr_z <- t(scale(t(expr)))  # z-score by gene
+
+# --- Hierarchical Clustering ---
+sample_dist <- dist(t(expr_z), method="euclidean")
+hc <- hclust(sample_dist, method="ward.D2")
+pdf(file.path(output_dir, "hclust_dendrogram.pdf"))
+plot(hc, hang=-1, cex=0.6, main="Sample Hierarchical Clustering")
+rect.hclust(hc, k=3, border="red")
+dev.off()
+
+# heatmap of top 1000 variable genes
+top_var <- order(apply(expr_z, 1, var), decreasing=T)[1:1000]
+pdf(file.path(output_dir, "heatmap_top1000.pdf"), width=12, height=10)
+pheatmap(expr_z[top_var, ], clustering_method="ward.D2", show_rownames=F,
+         color=colorRampPalette(c("blue","white","red"))(100), scale="row")
+dev.off()
+
+# --- K-means ---
+wss <- sapply(1:10, function(k) kmeans(expr_z, centers=k, nstart=10)$tot.withinss)
+pdf(file.path(output_dir, "kmeans_elbow.pdf"))
+plot(1:10, wss, type="b", pch=19, xlab="k", ylab="WSS", main="Elbow Method")
+dev.off()
+
+set.seed(123)
+km <- kmeans(expr_z, centers=2, nstart=25)
+pdf(file.path(output_dir, "kmeans_pca.pdf"))
+print(fviz_cluster(km, data=t(expr_z), palette="jco", ggtheme=theme_minimal()))
+dev.off()
+
+# --- NMF ---
+expr_nmf <- as.matrix(expr)
+est <- nmfEstimateRank(expr_nmf, range=2:8, method="brunet", nrun=10, .options="vP")
+pdf(file.path(output_dir, "nmf_estimate_rank.pdf"))
+plot(est)
+dev.off()
+
+nmf_res <- nmf(expr_nmf, rank=3, nrun=50, seed=123)
+pdf(file.path(output_dir, "nmf_consensus.pdf"))
+consensusmap(nmf_res)
+dev.off()
+
+# --- ConsensusClusterPlus ---
+mads <- apply(expr, 1, mad)
+d <- expr[rev(order(mads))[1:3000], ]
+d <- sweep(d, 1, apply(d, 1, median, na.rm=T))
+
+results <- ConsensusClusterPlus(d, maxK=10, reps=1000, pItem=0.8, pFeature=1,
+                                clusterAlg="pam", distance="pearson",
+                                title=output_dir, seed=1262118388.71279, plot="pdf")
+
+
+# ============================================================================
+# 03_tsne.R
+# ============================================================================
+# Input:  Gene expression matrix
+# Output: t-SNE 2D coordinates plot
+# ============================================================================
+
+library(Rtsne)
+library(ggplot2)
+
+input_file  <- "data/expr_matrix.txt"
+output_file <- "results/tsne_plot.pdf"
+
+expr <- read.table(input_file, header=T, row.names=1, sep="	", check.names=F)
+expr_t <- t(expr)
+
+# filter: mean FPKM >= 1
+keep <- apply(expr_t, 2, function(x) mean(x, na.rm=T) >= 1)
+expr_t <- expr_t[, keep]
+expr_t <- log2(expr_t + 1)
+expr_t <- expr_t[complete.cases(expr_t), ]
+
+set.seed(123)
+tsne <- Rtsne(expr_t, dims=2, perplexity=10, max_iter=1000)
+
+df <- data.frame(tsne$Y, Sample=rownames(expr_t))
+p <- ggplot(df, aes(X1, X2)) + geom_point(size=3, alpha=0.8) +
+     labs(title="t-SNE", x="t-SNE 1", y="t-SNE 2") + theme_minimal() +
+     theme(plot.title=element_text(hjust=0.5))
+
+ggsave(output_file, p, width=6, height=5, dpi=300)
+
+
+# ============================================================================
+# 04_differential_analysis.R
+# ============================================================================
+# Input:  Count matrix + sample metadata with subtype labels
+# Output: DESeq2 results + volcano plot + heatmap
+# ============================================================================
+
+library(DESeq2)
+library(EnhancedVolcano)
+library(pheatmap)
+
+count_file  <- "data/count_matrix.txt"
+meta_file   <- "data/metadata.csv"   # columns: Sample, Subtype
+output_dir  <- "results/degs/"
+
+dir.create(output_dir, showWarnings=F, recursive=T)
+
+counts <- read.table(count_file, sep="	", header=T, row.names=1, check.names=F)
+meta   <- read.csv(meta_file)
+meta$Subtype <- factor(meta$Subtype)
+
+dds <- DESeqDataSetFromMatrix(countData=counts, colData=meta, design=~ Subtype)
+dds <- DESeq(dds)
+res <- results(dds, contrast=c("Subtype", "Treat", "Control"))
+
+# significant DEGs
+sig <- subset(res, pvalue < 0.05 & abs(log2FoldChange) > 1)
+
+write.csv(as.data.frame(res), file.path(output_dir, "DESeq2_all_results.csv"))
+write.csv(as.data.frame(sig),  file.path(output_dir, "DESeq2_sig_genes.csv"))
+
+# volcano plot
+pdf(file.path(output_dir, "volcano.pdf"), width=8, height=7)
+EnhancedVolcano(res, lab=rownames(res), x="log2FoldChange", y="pvalue",
+                pCutoff=0.05, FCcutoff=1, title="Treat vs Control")
+dev.off()
+
+# heatmap top DEGs
+top500 <- rownames(sig)[1:min(500, nrow(sig))]
+pdf(file.path(output_dir, "heatmap_topDEGs.pdf"), width=10, height=12)
+pheatmap(counts[top500, ], scale="row", clustering_distance_rows="correlation",
+         color=colorRampPalette(c("blue","white","red"))(50), show_rownames=F)
+dev.off()
+
+
+# ============================================================================
+# 05_enrichment.R
+# ============================================================================
+# Input:  DEG list from DESeq2
+# Output: GO & KEGG enrichment tables + dotplots
+# ============================================================================
+
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(fgsea)
+
+deg_file    <- "results/degs/DESeq2_sig_genes.csv"
+res_file    <- "results/degs/DESeq2_all_results.csv"
+output_dir  <- "results/enrichment/"
+
+dir.create(output_dir, showWarnings=F, recursive=T)
+
+sig <- read.csv(deg_file, row.names=1)
+res <- read.csv(res_file,  row.names=1)
+
+# GO
+entrez <- mapIds(org.Hs.eg.db, keys=rownames(sig), column="ENTREZID", keytype="SYMBOL")
+go <- enrichGO(gene=entrez, OrgDb=org.Hs.eg.db, ont="BP", pvalueCutoff=0.05)
+write.table(go, file.path(output_dir, "GO_enrichment.txt"), sep="	", quote=F, row.names=F)
+
+pdf(file.path(output_dir, "GO_dotplot.pdf"), width=8, height=7)
+dotplot(go, title="GO Enrichment")
+dev.off()
+
+# KEGG
+kk <- enrichKEGG(gene=entrez, organism="hsa", pvalueCutoff=1, qvalueCutoff=1)
+write.table(kk, file.path(output_dir, "KEGG_enrichment.txt"), sep="	", quote=F, row.names=F)
+
+# GSEA
+ranked <- sort(res$log2FoldChange, decreasing=T)
+names(ranked) <- rownames(res)
+# gsea_res <- fgsea(pathways=kegg_sets, stats=ranked, minSize=5, maxSize=500)
+
+
+# ============================================================================
+# 06_marker_selection.R
+# ============================================================================
+# Input:  Expression matrix + subtype labels
+# Output: RandomForest model + Boruta confirmed genes + importance plots
+# ============================================================================
+
+library(randomForest)
+library(caret)
+library(Boruta)
+library(pROC)
+library(ggplot2)
+library(dplyr)
+
+expr_file   <- "data/expr_matrix.csv"      # genes x samples
+meta_file   <- "data/subtype_labels.csv"   # Sample, Subtype
+output_dir  <- "results/markers/"
+
+dir.create(output_dir, showWarnings=F, recursive=T)
+
+expr <- read.csv(expr_file,  row.names=1)
+meta <- read.csv(meta_file)
+meta$Subtype <- factor(meta$Subtype)
+expr <- expr[, meta$Sample]  # match order
+
+expr_t <- t(expr)  # samples x genes
+
+# --- Random Forest ---
+set.seed(42)
+rf <- randomForest(x=expr_t, y=meta$Subtype, ntree=1000,
+                   mtry=sqrt(ncol(expr_t)), importance=T, proximity=T)
+
+saveRDS(rf, file.path(output_dir, "rf_model.rds"))
+
+# confusion matrix
+cm <- confusionMatrix(predict(rf), meta$Subtype)
+print(cm)
+
+pdf(file.path(output_dir, "confusion_matrix.pdf"), width=6, height=5)
+cm_df <- as.data.frame(cm$table)
+ggplot(cm_df, aes(Reference, Prediction, fill=Freq)) +
+  geom_tile(color="white") + geom_text(aes(label=Freq), size=12) +
+  scale_fill_gradient(low="#f7fbff", high="#08306b") +
+  labs(title="Confusion Matrix") + theme_minimal()
+dev.off()
+
+# variable importance
+imp <- as.data.frame(importance(rf))
+imp$Gene <- rownames(imp)
+write.csv(imp[order(imp$MeanDecreaseGini, decreasing=T), ],
+          file.path(output_dir, "rf_importance.csv"), row.names=F)
+
+pdf(file.path(output_dir, "rf_importance_plot.pdf"), width=8, height=10)
+varImpPlot(rf, n.var=50, main="Top 50 Important Genes")
+dev.off()
+
+# --- Boruta ---
+set.seed(42)
+boruta <- Boruta(x=expr_t, y=meta$Subtype, pValue=0.01, mcAdj=T,
+                 maxRuns=100, doTrace=2, holdHistory=T)
+
+confirmed <- getSelectedAttributes(boruta, withTentative=F)
+write.csv(data.frame(Gene=confirmed), file.path(output_dir, "boruta_confirmed_genes.csv"), row.names=F)
+
+pdf(file.path(output_dir, "boruta_plot.pdf"), width=10, height=8)
+plot(boruta, cex.axis=0.7, las=2, main="Boruta Feature Selection")
+dev.off()
+
+
+# ============================================================================
+# 07_forward_selection.R
+# ============================================================================
+# Input:  Expression matrix + Boruta confirmed genes + RF model
+# Output: Performance metrics for gene combinations (1 to N)
+# ============================================================================
+
+library(randomForest)
+library(caret)
+library(pROC)
+library(dplyr)
+
+expr_file   <- "data/expr_matrix.csv"
+meta_file   <- "data/subtype_labels.csv"
+boruta_file <- "results/markers/boruta_confirmed_genes.csv"
+rf_file     <- "results/markers/rf_model.rds"
+output_file <- "results/markers/forward_selection_results.csv"
+
+expr <- read.csv(expr_file, row.names=1)
+meta <- read.csv(meta_file)
+meta$Subtype <- factor(meta$Subtype)
+expr <- expr[, meta$Sample]
+expr_t <- t(expr)
+
+confirmed <- read.csv(boruta_file)$Gene
+confirmed <- confirmed[confirmed %in% colnames(expr_t)]
+
+# sort by RF importance
+rf <- readRDS(rf_file)
+imp <- as.data.frame(importance(rf))
+imp <- imp[confirmed, , drop=F]
+imp <- imp[order(imp$MeanDecreaseGini, decreasing=T), , drop=F]
+genes_ordered <- rownames(imp)
+
+results <- data.frame(N_genes=integer(), AUC_mean=numeric(), AUC_min=numeric(),
+                      Accuracy=numeric(), Specificity_mean=numeric(),
+                      Sensitivity_mean=numeric(), Genes=character(),
+                      stringsAsFactors=F)
+
+for(i in 1:length(genes_ordered)) {
+  g <- genes_ordered[1:i]
+  sub <- expr_t[, g, drop=F]
+  mtry <- max(1, min(floor(sqrt(ncol(sub))), ncol(sub)))
+
+  set.seed(42)
+  rf_i <- randomForest(x=sub, y=meta$Subtype, ntree=ifelse(i==1, 100, 500),
+                       mtry=mtry, importance=F)
+
+  pred_prob <- predict(rf_i, type="prob")
+  pred_cls  <- predict(rf_i, type="response")
+
+  cm <- confusionMatrix(pred_cls, meta$Subtype)
+  acc <- as.numeric(cm$overall["Accuracy"])
+
+  aucs <- c()
+  for(s in levels(meta$Subtype)) {
+    y <- ifelse(meta$Subtype==s, 1, 0)
+    if(length(unique(y)) < 2) next
+    aucs <- c(aucs, as.numeric(roc(y, pred_prob[,s], quiet=T, direction="<")$auc))
+  }
+
+  results <- rbind(results, data.frame(
+    N_genes=i, AUC_mean=mean(aucs, na.rm=T), AUC_min=min(aucs, na.rm=T),
+    Accuracy=acc,
+    Specificity_mean=ifelse(nlevels(meta$Subtype)==2, as.numeric(cm$byClass["Specificity"]),
+                            mean(as.numeric(cm$byClass[,"Specificity"]), na.rm=T)),
+    Sensitivity_mean=ifelse(nlevels(meta$Subtype)==2, as.numeric(cm$byClass["Sensitivity"]),
+                            mean(as.numeric(cm$byClass[,"Sensitivity"]), na.rm=T)),
+    Genes=paste(g, collapse=";"), stringsAsFactors=F
+  ))
+
+  if(i %% 5 == 0) cat(i, "genes done\n")
+}
+
+write.csv(results, output_file, row.names=F)
+
+
+# ============================================================================
+# 08_external_validation.R
+# ============================================================================
+# Input:  External expression matrices + subtype labels + confirmed genes
+# Output: AUC comparison barplot + ROC curves
+# ============================================================================
+
+library(randomForest)
+library(pROC)
+library(ggplot2)
+
+# training
+expr_train  <- read.csv("data/expr_matrix.csv", row.names=1)
+meta_train  <- read.csv("data/subtype_labels.csv")
+meta_train$Subtype <- factor(meta_train$Subtype)
+expr_train <- expr_train[, meta_train$Sample]
+
+# external 1
+expr_ext1   <- read.csv("data/external1_expr.csv", row.names=1)
+meta_ext1   <- read.csv("data/external1_labels.csv")
+meta_ext1$Subtype <- factor(meta_ext1$Subtype)
+
+# external 2
+expr_ext2   <- read.csv("data/external2_expr.csv", row.names=1)
+meta_ext2   <- read.csv("data/external2_labels.csv")
+meta_ext2$Subtype <- factor(meta_ext2$Subtype)
+
+confirmed   <- read.csv("results/markers/boruta_confirmed_genes.csv")$Gene
+
+genes <- Reduce(intersect, list(confirmed[1:30], rownames(expr_ext1), rownames(expr_ext2)))
+
+# train model on training set
+set.seed(42)
+rf_train <- randomForest(t(expr_train[genes, ]), meta_train$Subtype, ntree=1000)
+pred_train <- predict(rf_train, type="prob")[,2]
+roc_train <- roc(meta_train$Subtype, pred_train, quiet=T)
+
+# external 1
+rf_ext1 <- randomForest(t(expr_ext1[genes, ]), meta_ext1$Subtype, ntree=1000)
+pred_ext1 <- predict(rf_ext1, type="prob")[,2]
+roc_ext1 <- roc(meta_ext1$Subtype, pred_ext1, quiet=T, ci=T)
+
+# external 2
+rf_ext2 <- randomForest(t(expr_ext2[genes, ]), meta_ext2$Subtype, ntree=1000)
+pred_ext2 <- predict(rf_ext2, type="prob")[,2]
+roc_ext2 <- roc(meta_ext2$Subtype, pred_ext2, quiet=T, ci=T)
+
+cat("Train AUC:", round(auc(roc_train),3), "\n")
+cat("Ext1 AUC: ", round(auc(roc_ext1),3), "\n")
+cat("Ext2 AUC: ", round(auc(roc_ext2),3), "\n")
+
+# barplot
+roc_df <- data.frame(Set=c("Train","External1","External2"),
+                     AUC=round(c(auc(roc_train), auc(roc_ext1), auc(roc_ext2)), 3))
+p <- ggplot(roc_df, aes(Set, AUC, fill=Set)) + geom_col() +
+     labs(title="AUC across datasets", y="AUC") + ylim(0.5, 1) +
+     scale_fill_manual(values=c("#3B9AB2","#78B7C5","#F2300F")) + theme_minimal()
+ggsave("results/validation_AUC_barplot.pdf", p, width=6, height=5)
+
+# ROC curve
+pdf("results/validation_ROC.pdf", width=6, height=6)
+plot(roc_ext2, main="ROC Curve")
+abline(a=0, b=1, lty=2)
+dev.off()
+
+
+# ============================================================================
+# 09_silhouette_analysis.R
+# ============================================================================
+# Input:  Expression matrices (3 cohorts) + subtype labels
+# Output: Silhouette plots + summary statistics
+# ============================================================================
+
+library(cluster)
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+
+run_silhouette <- function(expr_file, label_file, cohort_name, need_log2=TRUE, sep_expr="	") {
+  expr <- read.table(expr_file, header=T, row.names=1, sep=sep_expr, check.names=F, stringsAsFactors=F)
+  labels <- read.csv(label_file, stringsAsFactors=F)
+  colnames(labels) <- c("SampleID","Subtype")
+
+  common <- intersect(colnames(expr), labels$SampleID)
+  expr <- expr[, common, drop=F]
+  labels <- labels[match(common, labels$SampleID), ]
+
+  if(need_log2) expr <- log2(expr + 1)
+  expr_t <- as.data.frame(t(expr))
+
+  labels$Subtype <- toupper(trimws(as.character(labels$Subtype)))
+  labels$SubtypeNum <- as.numeric(factor(labels$Subtype, levels=c("A","B")))
+
+  dist_mat <- dist(expr_t, method="euclidean")
+  sil <- silhouette(labels$SubtypeNum, dist=dist_mat)
+
+  sil_df <- data.frame(SampleID=common, Subtype=labels$Subtype,
+                       Cluster=sil[,1], Neighbor=sil[,2], Silhouette=sil[,3],
+                       Cohort=cohort_name, stringsAsFactors=F)
+
+  summary <- sil_df %>% group_by(Subtype) %>%
+    summarise(Mean_Sil=mean(Silhouette), Median_Sil=median(Silhouette),
+              Min_Sil=min(Silhouette), Max_Sil=max(Silhouette), N=n(), .groups="drop") %>%
+    mutate(Cohort=cohort_name)
+
+  return(list(sil_df=sil_df, summary=summary, overall_mean=mean(sil_df$Silhouette)))
+}
+
+# run 3 cohorts
+train <- run_silhouette("data/train_30genes.txt",   "data/train_labels.csv",   "Training",     need_log2=T)
+val1  <- run_silhouette("data/val1_30genes.txt",    "data/val1_labels.csv",    "Validation1",  need_log2=T)
+val2  <- run_silhouette("data/val2_30genes.txt",    "data/val2_labels.csv",    "Validation2",  need_log2=F)
+
+all_sil <- bind_rows(train$sil_df, val1$sil_df, val2$sil_df)
+all_sum <- bind_rows(train$summary, val1$summary, val2$summary)
+
+write.csv(all_sil, "results/silhouette_all_samples.csv", row.names=F)
+write.csv(all_sum, "results/silhouette_summary.csv", row.names=F)
+
+# plotting function
+plot_sil <- function(sil_df, cohort, overall) {
+  sil_df <- sil_df %>% arrange(Subtype, Silhouette) %>% mutate(Y_pos=1:n())
+  counts <- sil_df %>% count(Subtype)
+  gap <- 15
+  sil_df$Y_plot <- ifelse(sil_df$Subtype=="A", sil_df$Y_pos, sil_df$Y_pos + gap)
+  max_y <- max(sil_df$Y_plot) + 10
+
+  p <- ggplot(sil_df, aes(Silhouette, Y_plot, fill=Subtype)) +
+    geom_bar(stat="identity", width=1, alpha=0.8) +
+    scale_fill_manual(values=c("A"="#2E86AB","B"="#A23B72")) +
+    geom_vline(xintercept=overall, color="#D62828", linetype="dashed", linewidth=1) +
+    annotate("text", x=overall+0.05, y=max_y*0.95, label=paste0("Avg=",round(overall,3)),
+             color="#D62828", fontface="bold", size=3.5, hjust=0) +
+    labs(title=paste0(cohort, "\n(n=",nrow(sil_df),", 30-gene)"),
+         x="Silhouette Coefficient", y="Sample Index") +
+    xlim(-0.4, 1) + ylim(0, max_y) + theme_minimal() +
+    theme(panel.grid.major.y=element_blank(), panel.grid.minor=element_blank(),
+          axis.text.y=element_blank(), axis.ticks.y=element_blank(),
+          plot.title=element_text(hjust=0.5, face="bold", size=11), legend.position="none")
+
+  y_a <- counts$n[1]/2
+  y_b <- counts$n[1] + gap + counts$n[2]/2
+  p + annotate("text", x=-0.35, y=y_a, label="Subtype A", fontface="bold", size=4, hjust=0) +
+      annotate("text", x=-0.35, y=y_b, label="Subtype B", fontface="bold", size=4, hjust=0)
+}
+
+p1 <- plot_sil(train$sil_df, "Training Set", train$overall_mean)
+p2 <- plot_sil(val1$sil_df,  "Validation Set 1", val1$overall_mean)
+p3 <- plot_sil(val2$sil_df,  "Validation Set 2 (GEO)", val2$overall_mean)
+
+combined <- grid.arrange(p1, p2, p3, ncol=3,
+  top=textGrob("Silhouette Analysis of 30-gene Signature", gp=gpar(fontsize=14, fontface="bold")))
+
+ggsave("results/silhouette_three_cohorts.pdf", combined, width=16, height=8, dpi=300)
