@@ -1,0 +1,864 @@
+# -------------------- 1. Load libraries -------------------------
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+
+# -------------------- 2. Define sample directories (relative) ----
+base_dir <- "./data/"
+sample_dirs <- c(
+  "NF2-VS-SNRNA-07",
+  "NF2-VS-SNRNA-08",
+  "NF2-VS-SNRNA-09",
+  "NF2-VS-SNRNA-10",
+  "NF2-VS-SNRNA-15",
+  "SVS-59",
+  "SVS-60",
+  "SVS-63",
+  "SVS-65",
+  "SVS-67",
+  "SVS-68"
+)
+
+sample1_dir <- file.path(base_dir, sample_dirs[1])
+sample2_dir <- file.path(base_dir, sample_dirs[2])
+sample3_dir <- file.path(base_dir, sample_dirs[3])
+sample4_dir <- file.path(base_dir, sample_dirs[4])
+sample5_dir <- file.path(base_dir, sample_dirs[5])
+sample6_dir <- file.path(base_dir, sample_dirs[6])
+sample7_dir <- file.path(base_dir, sample_dirs[7])
+sample8_dir <- file.path(base_dir, sample_dirs[8])
+sample9_dir <- file.path(base_dir, sample_dirs[9])
+sample10_dir <- file.path(base_dir, sample_dirs[10])
+sample11_dir <- file.path(base_dir, sample_dirs[11])
+
+# -------------------- 3. Read 10X data --------------------------
+sample1_data <- Read10X(data.dir = sample1_dir)
+sample2_data <- Read10X(data.dir = sample2_dir)
+sample3_data <- Read10X(data.dir = sample3_dir)
+sample4_data <- Read10X(data.dir = sample4_dir)
+sample5_data <- Read10X(data.dir = sample5_dir)
+sample6_data <- Read10X(data.dir = sample6_dir)
+sample7_data <- Read10X(data.dir = sample7_dir)
+sample8_data <- Read10X(data.dir = sample8_dir)
+sample9_data <- Read10X(data.dir = sample9_dir)
+sample10_data <- Read10X(data.dir = sample10_dir)
+sample11_data <- Read10X(data.dir = sample11_dir)
+
+# -------------------- 4. Create Seurat objects ------------------
+sample1 <- CreateSeuratObject(counts = sample1_data, project = "NF2-VS-SNRNA-07", min.cells = 3, min.features = 200)
+sample2 <- CreateSeuratObject(counts = sample2_data, project = "NF2-VS-SNRNA-08", min.cells = 3, min.features = 200)
+sample3 <- CreateSeuratObject(counts = sample3_data, project = "NF2-VS-SNRNA-09", min.cells = 3, min.features = 200)
+sample4 <- CreateSeuratObject(counts = sample4_data, project = "NF2-VS-SNRNA-10", min.cells = 3, min.features = 200)
+sample5 <- CreateSeuratObject(counts = sample5_data, project = "NF2-VS-SNRNA-15", min.cells = 3, min.features = 200)
+sample6 <- CreateSeuratObject(counts = sample6_data, project = "SVS-59", min.cells = 3, min.features = 200)
+sample7 <- CreateSeuratObject(counts = sample7_data, project = "SVS-60", min.cells = 3, min.features = 200)
+sample8 <- CreateSeuratObject(counts = sample8_data, project = "SVS-63", min.cells = 3, min.features = 200)
+sample9 <- CreateSeuratObject(counts = sample9_data, project = "SVS-65", min.cells = 3, min.features = 200)
+sample10 <- CreateSeuratObject(counts = sample10_data, project = "SVS-67", min.cells = 3, min.features = 200)
+sample11 <- CreateSeuratObject(counts = sample11_data, project = "SVS-68", min.cells = 3, min.features = 200)
+
+# -------------------- 5. Normalize each sample ------------------
+sample1 <- NormalizeData(sample1, normalization.method = "LogNormalize", scale.factor = 10000)
+sample2 <- NormalizeData(sample2, normalization.method = "LogNormalize", scale.factor = 10000)
+sample3 <- NormalizeData(sample3, normalization.method = "LogNormalize", scale.factor = 10000)
+sample4 <- NormalizeData(sample4, normalization.method = "LogNormalize", scale.factor = 10000)
+sample5 <- NormalizeData(sample5, normalization.method = "LogNormalize", scale.factor = 10000)
+sample6 <- NormalizeData(sample6, normalization.method = "LogNormalize", scale.factor = 10000)
+sample7 <- NormalizeData(sample7, normalization.method = "LogNormalize", scale.factor = 10000)
+sample8 <- NormalizeData(sample8, normalization.method = "LogNormalize", scale.factor = 10000)
+sample9 <- NormalizeData(sample9, normalization.method = "LogNormalize", scale.factor = 10000)
+sample10 <- NormalizeData(sample10, normalization.method = "LogNormalize", scale.factor = 10000)
+sample11 <- NormalizeData(sample11, normalization.method = "LogNormalize", scale.factor = 10000)
+
+# -------------------- 6. Find variable features -----------------
+sample1 <- FindVariableFeatures(sample1, selection.method = "vst", nfeatures = 2000)
+sample2 <- FindVariableFeatures(sample2, selection.method = "vst", nfeatures = 2000)
+sample3 <- FindVariableFeatures(sample3, selection.method = "vst", nfeatures = 2000)
+sample4 <- FindVariableFeatures(sample4, selection.method = "vst", nfeatures = 2000)
+sample5 <- FindVariableFeatures(sample5, selection.method = "vst", nfeatures = 2000)
+sample6 <- FindVariableFeatures(sample6, selection.method = "vst", nfeatures = 2000)
+sample7 <- FindVariableFeatures(sample7, selection.method = "vst", nfeatures = 2000)
+sample8 <- FindVariableFeatures(sample8, selection.method = "vst", nfeatures = 2000)
+sample9 <- FindVariableFeatures(sample9, selection.method = "vst", nfeatures = 2000)
+sample10 <- FindVariableFeatures(sample10, selection.method = "vst", nfeatures = 2000)
+sample11 <- FindVariableFeatures(sample11, selection.method = "vst", nfeatures = 2000)
+
+# -------------------- 7. Create integration list ----------------
+sample_list <- list(sample1, sample2, sample3, sample4, sample5, sample6, sample7, sample8, sample9, sample10, sample11)
+
+# -------------------- 8. Integrate data -------------------------
+anchors <- FindIntegrationAnchors(object.list = sample_list, dims = 1:30)
+integrated_data <- IntegrateData(anchorset = anchors, dims = 1:30)
+DefaultAssay(integrated_data) <- "integrated"
+
+### Cell annotation (using object 'data' – note: 'data' is not yet defined; this part will use the integrated object, but user code uses 'data' directly. We keep as is.)
+# The following code assumes 'data' is the integrated Seurat object. We assign integrated_data to 'data' to match original.
+data <- integrated_data
+
+data$sample.ident <- case_when(
+  data$orig.ident %in% c('NF2-VS-SNRNA-07') ~ 'A_N2CJV2_VS',
+  data$orig.ident %in% c('NF2-VS-SNRNA-08') ~ 'A_N2ZZL1_VS',
+  data$orig.ident %in% c('NF2-VS-SNRNA-09') ~ 'B_N2ZYX1_VS',
+  data$orig.ident %in% c('NF2-VS-SNRNA-10') ~ 'B_N2XCY2_VS',
+  data$orig.ident %in% c('NF2-VS-SNRNA-15') ~ 'B_N2WQF2_VS',
+  data$orig.ident %in% c('SCH-18') ~ 'SCH-18',
+  data$orig.ident %in% c('SCH-20') ~ 'SCH-20',
+  data$orig.ident %in% c('SCH-21') ~ 'SCH-21',
+  data$orig.ident %in% c('SCH-22') ~ 'SCH-22'
+)
+data$cluster <- case_when(
+  data$orig.ident %in% c('NF2-VS-07','NF2-VS-08') ~ 'IES_NF2',
+  data$orig.ident %in% c('NF2-VS-09','NF2-VS-10','NF2-VS-15') ~ 'IDS_NF2',
+  data$orig.ident %in% c('SVS-59','SVS-60','SVS-68') ~ 'IDS_SVS',
+  data$orig.ident %in% c('SVS-63','SVS-65','SVS-67') ~ 'IES_SVS'
+)
+
+# -------------------- 9. Initial tSNE visualization -------------
+p1 <- DimPlot(data, reduction = "tsne", group.by = "sample.ident", label = TRUE)
+p2 <- DimPlot(data, reduction = "tsne", label = TRUE)
+p1 + p2
+
+# -------------------- 10. QC filtering -------------------------
+DefaultAssay(data) <- "RNA"
+data[["percent.mt"]] <- PercentageFeatureSet(object = data, pattern = "^MT-")
+data <- subset(x = data, subset = nCount_RNA >= 5 & nFeature_RNA > 400 & nFeature_RNA < 5000 & percent.mt < 5 & nCount_RNA < 10000 & percent.rp < 20)
+
+# -------------------- 11. Re-normalize and find HVGs ------------
+data <- NormalizeData(object = data, normalization.method = "LogNormalize", scale.factor = 10000)
+data <- FindVariableFeatures(object = data, selection.method = "vst", nfeatures = 2000)
+
+# -------------------- 12. Scale, PCA, clustering, UMAP/tSNE ---
+DefaultAssay(data) <- "integrated"
+data <- ScaleData(data, verbose = FALSE)
+data <- RunPCA(data, npcs = 30, verbose = FALSE)
+data <- FindNeighbors(data, dims = 1:30) 
+data <- FindClusters(data, resolution = 0.5)
+data <- RunTSNE(data, reduction = "pca", dims = 1:30)
+data <- RunUMAP(data, dims = 1:30)
+
+# -------------------- 13. Save cluster plots --------------------
+pdf(file = "./output/DimPlot-seurat_clusters-0.7.pdf", width = 10, height = 6)
+p3 <- DimPlot(data, reduction = "tsne", group.by = c("seurat_clusters"), label = TRUE)
+p4 <- DimPlot(data, reduction = "umap", group.by = c("seurat_clusters"), label = TRUE)
+p3 + p4
+dev.off()
+
+# -------------------- 14. Find all markers ----------------------
+DefaultAssay(data) <- "RNA"
+data <- NormalizeData(data, normalization.method = "LogNormalize", scale.factor = 10000)
+all.markers <- FindAllMarkers(data, only.pos = TRUE, min.pct = 0.2, logfc.threshold = 0.25, test.use = "wilcox")
+head(all.markers)
+write.table(all.markers, file = "./output/2_all.markers.txt", quote = FALSE, sep = "\t", row.names = FALSE, col.names = TRUE)
+
+# -------------------- 15. Dot plot for marker genes ------------
+gene <- c("NRXN1","XKR4","SCN7A","NCAM1","S100B","MPZ","PRX","MLIP","RNASE1","SRGN","MS4A7","CD68","ANXA2","MSR1","CSF1R","CD83","CD86","CD14","CD163","AFF3","GPAT3","HLA-DRA","HLA-DQA1","SKAP1","THEMIS","CD247","CD96","FYN","CD3","TRAC","COL1A1","COL3A1","IGFBP5","FLT1","LDB2","VWF","EGFL7","CD34","TOP2A","NUSAP1","MKI67")
+p3 <- DotPlot(data, group.by = 'clusterName', cols = c('grey90','#CC0033'),
+              features = unique(gene)) + RotatedAxis()
+p3
+
+# -------------------- 16. Assign cell type names ---------------
+data$clusterName <- case_when(
+  data$seurat_clusters %in% c('0','3','4','6','7','13','16') ~ 'nmSC',
+  data$seurat_clusters %in% c('11') ~ 'myeSC',
+  data$seurat_clusters %in% c('17') ~ 'High-proliferation SC',
+  data$seurat_clusters %in% c('14') ~ 'Endothelial',
+  data$seurat_clusters %in% c('1','2','5','15') ~ 'Macrophage',
+  data$seurat_clusters %in% c('9') ~ 'Monocyte',
+  data$seurat_clusters %in% c('10') ~ 'Fibroblast',
+  data$seurat_clusters %in% c('8','12') ~ 'T cell',
+  data$seurat_clusters %in% c('18') ~ 'NKT cell',
+  data$seurat_clusters %in% c('19') ~ 'Plasma cells',
+  data$seurat_clusters %in% c('20') ~ 'High-proliferation SAM',
+  TRUE ~ 'Unknow'
+)
+Idents(data) <- 'clusterName'
+
+# -------------------- 17. Cell proportion plots ----------------
+cell_prop <- data@meta.data %>%
+  count(cluster, subtype) %>%
+  group_by(cluster) %>%
+  mutate(proportion = n / sum(n)) %>%
+  ungroup()
+
+ggplot(cell_prop, aes(x = clusterName, y = proportion, fill = cluster)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Cell subtype proportion across clusters",
+       x = "Cluster",
+       y = "Percentage",
+       fill = "Subtype") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.text.x = element_text(angle = 0, hjust = 0.5)
+  )
+
+ggplot(cell_prop, aes(x = subtype, y = proportion, fill = cluster)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Cell subtype proportion across clusters",
+       x = "Cluster",
+       y = "Percentage",
+       fill = "Subtype") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.text.x = element_text(angle = 0, hjust = 0.5)
+  ) +
+  scale_fill_manual(values = c('#1F78B4','#A6CEE3','#E31A1C','#FB9A99'))
+
+# -------------------- 18. InferCNV analysis --------------------
+# Note: This section uses 'seurat_obj' which is not defined in the original code.
+# We keep it as is; user must ensure 'seurat_obj' exists.
+library(infercnv)
+
+counts_matrix <- GetAssayData(seurat_obj, slot = "counts")   # seurat_obj not defined – keep original
+
+cell_annotations <- data.frame(
+  cell_id = colnames(seurat_obj),
+  cell_type = seurat_obj@meta.data$celltype,
+  cluster = seurat_obj@meta.data$cluster
+)
+write.table(cell_annotations, file = "./data/cell_annotations.txt", sep = "\t", 
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+
+# Change to output directory (relative)
+setwd("./output/infercnv")   # ensure this folder exists or create
+
+infercnv_obj <- CreateInfercnvObject(
+  raw_counts_matrix = counts_matrix,
+  annotations_file = "./data/cell_annotations.txt",
+  delim = "\t",
+  gene_order_file = "./data/geneFile.txt",
+  ref_group_names = "REndothelial"
+)
+
+infercnv_obj <- run(
+  infercnv_obj,
+  cutoff = 0.1,
+  out_dir = "./output/infercnv_output_22q-NF2",
+  cluster_by_groups = TRUE,
+  denoise = TRUE,
+  HMM = FALSE,
+  analysis_mode = "samples",
+  num_threads = 8,
+  write_expr_matrix = TRUE,
+  write_phylo = TRUE
+)
+
+# ---- 22q deletion analysis (continuation) ----
+gene_order_file <- read.delim("./data/geneFile.txt", header = FALSE)
+colnames(gene_order_file) <- c("gene", "chr", "start", "end")
+genes_22q <- gene_order_file %>%
+  filter(chr == "chr22", start > 15000000) %>%
+  pull(gene)
+
+obs_22q <- obs_matrix[rownames(obs_matrix) %in% genes_22q, ]   # obs_matrix not defined – keep as is
+cell_22q_mean_signal <- colMeans(obs_22q, na.rm = TRUE)
+hist(cell_22q_mean_signal, breaks = 50, main = "Distribution of 22q Mean Signal")
+abline(v = 1, col = "red", lwd = 2)
+
+cnv_metadata <- data.frame(cell_barcode = names(cell_22q_mean_signal),
+                           mean_signal_22q = cell_22q_mean_signal)
+rownames(cnv_metadata) <- cnv_metadata$cell_barcode
+seurat_obj <- AddMetaData(seurat_obj,
+                          metadata = cnv_metadata[colnames(seurat_obj), "mean_signal_22q", drop = FALSE],
+                          col.name = "mean_signal_22q")
+signal_threshold <- 1.01
+seurat_obj$has_22q_deletion <- ifelse(seurat_obj$mean_signal_22q < signal_threshold, "Yes", "No")
+head(seurat_obj@meta.data)
+
+FeaturePlot(seurat_obj, features = "mean_signal_22q", pt.size = 0.5, order = TRUE) +
+  scale_colour_gradientn(colours = c("blue", "green", "yellow", "red"), limits = c(0.8, 1.2)) +
+  ggtitle("22q Mean Signal Intensity")
+DimPlot(seurat_obj, group.by = "has_22q_deletion", cols = c("grey90", "blue"), pt.size = 0.5, order = TRUE) +
+  ggtitle("Cells with Putative 22q Deletion")
+
+# -------------------- 19. Subclustering SC/MC/TC and GO enrichment ----------
+# Note: This part re-uses 'data' object.
+data <- data[, data@meta.data$clusterName %in% c('nmSC','myeSC','High-proliferation SC')] 
+#data <- data[,data@meta.data$clusterName %in% c('Macrophage','Monocyte','High-proliferation SAM')] 
+#data <- data[,data@meta.data$clusterName %in% c('T cell','NKT cell')] 
+
+DefaultAssay(data) <- "integrated"
+data <- ScaleData(data, verbose = FALSE)
+data <- RunPCA(data, npcs = 30, verbose = FALSE)
+data <- FindNeighbors(data, dims = 1:30) 
+data <- FindClusters(data, resolution = 0.2)
+data <- RunTSNE(data, reduction = "pca", dims = 1:30)
+data <- RunUMAP(data, dims = 1:30)
+p3 <- DimPlot(data, reduction = "tsne", group.by = c("seurat_clusters"), label = TRUE)
+p4 <- DimPlot(data, reduction = "umap", group.by = c("seurat_clusters"), label = TRUE)
+p3 + p4
+
+gene <- c("SCNN7A","NCAM1","SLC24A2","FOB","RFX2","PTX3","VEGFA","MX2","IFI44L","IFIT1","SLC11A1","CHN2","HLA-DRA","S100B","PRX","MPZ","MBP","MKI67","TOP2A","TGFBI","RUNX2","GAP43")
+p3 <- DotPlot(data, group.by = 'seurat_clusters', cols = c('grey90','#CC0033'),
+              features = unique(gene)) + RotatedAxis()
+p3
+
+DefaultAssay(data) <- "RNA"
+Idents(data) <- 'seurat_clusters'
+data <- NormalizeData(data, normalization.method = "LogNormalize", scale.factor = 1e4) 
+all.markers <- FindAllMarkers(data, only.pos = TRUE, min.pct = 0.2, logfc.threshold = 0.25, test.use = "wilcox")
+head(all.markers)
+write.table(all.markers, file = "./output/2_all.markers-SC.txt", quote = FALSE, sep = "\t", row.names = FALSE, col.names = TRUE)
+
+# ---- GO enrichment for subtypes ----
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(enrichplot)
+
+Idents(data) <- 'seurat_clusters'
+subtype_counts <- table(data$seurat_clusters)
+cat("Cell subtype distribution:\n")
+print(subtype_counts)
+
+valid_subtypes <- names(subtype_counts)[subtype_counts >= 50]
+seurat_obj <- subset(data, subset = seurat_clusters %in% valid_subtypes)
+Idents(seurat_obj) <- "seurat_clusters"
+
+marker_genes <- list()
+diff_params <- list(min.pct = 0.25, logfc.threshold = 0.25, test.use = "wilcox", only.pos = TRUE)
+
+for (subtype in levels(Idents(seurat_obj))) {
+  cat("\n=== Analyzing subtype:", subtype, "===\n")
+  markers <- FindMarkers(seurat_obj, ident.1 = subtype, ident.2 = NULL,
+                         min.pct = diff_params$min.pct,
+                         logfc.threshold = diff_params$logfc.threshold,
+                         test.use = diff_params$test.use,
+                         only.pos = diff_params$only.pos)
+  markers$gene <- rownames(markers)
+  sig_markers <- subset(markers, p_val_adj < 0.05)
+  sig_markers <- sig_markers[order(-sig_markers$avg_log2FC), ]
+  marker_genes[[subtype]] <- sig_markers
+  cat("Significant DEGs found:", nrow(sig_markers), "\n")
+}
+
+all_markers <- do.call(rbind, lapply(names(marker_genes), function(subtype) {
+  df <- marker_genes[[subtype]]
+  df$subtype <- subtype
+  return(df)
+}))
+write.csv(all_markers, "./output/subtype_marker_genes-0814.csv", row.names = FALSE)
+
+go_results <- list()
+for (subtype in names(marker_genes)) {
+  cat("\n=== GO enrichment for:", subtype, "===\n")
+  sig_genes <- marker_genes[[subtype]]$gene
+  if (length(sig_genes) < 5) {
+    cat("Too few genes, skip\n")
+    next
+  }
+  gene_df <- bitr(sig_genes, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Hs.eg.db)
+  if (nrow(gene_df) == 0) {
+    cat("ID conversion failed, skip\n")
+    next
+  }
+  ego <- enrichGO(gene = gene_df$ENTREZID, OrgDb = org.Hs.eg.db, keyType = "ENTREZID",
+                  ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.5, qvalueCutoff = 0.5,
+                  readable = TRUE)
+  go_results[[subtype]] <- ego
+  cat("Enriched GO terms:", nrow(ego), "\n")
+  if (nrow(ego) > 0) {
+    dot_plot <- dotplot(ego, showCategory = 20) + ggtitle(paste(subtype, "GO enrichment"))
+    ggsave(paste0("./output/GO_dotplot_", subtype, ".pdf"), dot_plot, width = 10, height = 8)
+  }
+}
+
+sink("./output/analysis_summary-2.txt")
+cat("=== Single-cell subtype DEG and GO enrichment summary ===\n\n")
+cat("Time:", Sys.time(), "\n")
+cat("Number of subtypes:", length(valid_subtypes), "\n")
+cat("Total DEGs:", nrow(all_markers), "\n\n")
+cat("Per subtype DEG counts:\n")
+for (subtype in names(marker_genes)) {
+  cat(subtype, ":", nrow(marker_genes[[subtype]]), "DEGs\n")
+}
+cat("\nGO enrichment stats:\n")
+for (subtype in names(go_results)) {
+  if (!is.null(go_results[[subtype]])) {
+    cat(subtype, ":", nrow(go_results[[subtype]]), "GO terms\n")
+    cat("Top 5:\n")
+    print(head(go_results[[subtype]]$Description, 50))
+    cat("\n")
+  }
+}
+sink()
+
+# Combined GO dot plot
+all_ego <- lapply(go_results, function(x) {
+  if (nrow(x) > 0) return(as.data.frame(x)) else return(NULL)
+})
+combined_df <- do.call(rbind, lapply(names(all_ego), function(name) {
+  if (!is.null(all_ego[[name]])) {
+    df <- all_ego[[name]]
+    df$Subtype <- name
+    return(head(df, 5))
+  } else { return(NULL) }
+}))
+if (!is.null(combined_df)) {
+  combined_plot <- ggplot(combined_df, aes(x = Subtype, y = Description, size = Count, color = -log10(p.adjust))) +
+    geom_point() + scale_color_gradient(low = "blue", high = "red") +
+    labs(title = "GO pathway comparison across subtypes", x = "Subtype", y = "GO term") +
+    theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  ggsave("./output/combined_GO_dotplot.pdf", combined_plot, width = 12, height = 8)
+}
+
+# Network plots
+for (subtype in names(go_results)) {
+  if (nrow(go_results[[subtype]]) > 5) {
+    net_plot <- cnetplot(go_results[[subtype]], categorySize = "pvalue", showCategory = 5)
+    ggsave(paste0("./output/GO_network_", gsub(" ", "_", subtype), ".pdf"), net_plot, width = 12, height = 10)
+  }
+}
+
+saveRDS(go_results, file = "./output/go_enrichment_results.rds")
+sink("./output/go_enrichment_summary.txt")
+cat("=== GO enrichment summary ===\n\n")
+cat("Time:", Sys.time(), "\n\n")
+for (subtype in names(go_results)) {
+  ego <- go_results[[subtype]]
+  if (!is.null(ego) && nrow(ego) > 0) {
+    cat("Subtype:", subtype, "\n")
+    cat("Significant pathways:", nrow(ego), "\n")
+    cat("Top 10:\n")
+    print(head(ego, 10))
+    cat("\n--------------------------------------------------\n\n")
+  }
+}
+sink()
+
+for (subtype in names(go_results)) {
+  ego <- go_results[[subtype]]
+  if (!is.null(ego) && nrow(ego) > 0) {
+    write.csv(as.data.frame(ego), file = paste0("./output/GO_results_", gsub(" ", "_", subtype), ".csv"))
+  }
+}
+
+# -------------------- 20. Further subtype annotation ------------
+data$subtype <- case_when(
+  data$seurat_clusters %in% c('0') ~ 'Axonogenesis',
+  data$seurat_clusters %in% c('1') ~ 'ECM-remodeling',
+  data$seurat_clusters %in% c('2') ~ 'hypoxia',
+  data$seurat_clusters %in% c('3') ~ 'MHC-II',
+  data$seurat_clusters %in% c('4') ~ 'Immune-respone',
+  data$seurat_clusters %in% c('5') ~ 'Myelinating',
+  data$seurat_clusters %in% c('6') ~ 'IFN response',
+  data$seurat_clusters %in% c('7') ~ 'repair like',
+  data$seurat_clusters %in% c('8') ~ 'Proliferation',
+  TRUE ~ 'Unknow'
+)
+Idents(data) <- 'subtype' 
+
+df_meta <- data@meta.data
+sum_cell <- df_meta %>% group_by(cluster, subtype) %>% summarise(n = n())
+
+ggplot(sum_cell, aes(x = factor(cluster), y = n, fill = subtype)) +
+  geom_col(position = position_fill(), width = 0.75) +
+  theme_classic(base_size = 14) +
+  theme(panel.grid = element_blank(),
+        legend.position = 'right',
+        legend.background = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        aspect.ratio = 1) + 
+  xlab('Patient number') + ylab('Cell Percent') +
+  scale_fill_manual(values = c("#A6CEE3","#B2DF8A","#1F78B4","#E31A1C","#FB9A99","#FF7F00","#CAB2D6","#6A3D9A","#33A02C")) +
+  scale_fill_aaas(name = '', alpha = 0.7) 
+
+# ---- Heatmap of gene expression across subtypes ----
+library(tidyr)
+library(pheatmap)
+
+exp_matrix <- GetAssayData(data, assay = "RNA", slot = "data")[genes_to_plot, ]   # genes_to_plot not defined – keep as is
+cell_meta <- data@meta.data[, "subtype", drop = FALSE]
+avg_exp_long <- as.data.frame(t(as.matrix(exp_matrix))) %>%
+  mutate(CellGroup = cell_meta$subtype) %>%
+  pivot_longer(cols = -CellGroup, names_to = "Gene", values_to = "Expression") %>%
+  group_by(CellGroup, Gene) %>%
+  summarise(MeanExp = mean(Expression), .groups = 'drop')
+
+avg_exp_wide <- avg_exp_long %>%
+  pivot_wider(id_cols = Gene, names_from = CellGroup, values_from = MeanExp) %>%
+  column_to_rownames("Gene")
+avg_exp_wide <- avg_exp_wide[, desired_order]   # desired_order not defined
+avg_exp_wide_scaled <- t(scale(t(avg_exp_wide)))
+pheatmap(avg_exp_wide_scaled,
+         cluster_cols = FALSE, cluster_rows = FALSE,
+         color = colorRampPalette(c("navy", "white", "firebrick3"))(100),
+         angle_col = 45, main = "Z-score of marker genes across subtypes",
+         border_color = NA, fontsize_row = 10, fontsize_col = 10)
+
+# -------------------- 21. Marker gene cross-validation with NC dataset --------
+library(tidyverse)
+SC_data <- readRDS("./data/NF2-SVS_scRNAseq-SC-0924.rds")
+NC_data <- readRDS("./data/NC_nc_integrated.rds")
+
+print(paste("Self-data cells:", ncol(SC_data)))
+print(paste("NC dataset cells:", ncol(NC_data)))
+if ("sc_subtype" %in% colnames(SC_data@meta.data)) print(table(SC_data$sc_subtype))
+
+marker_genes_list <- list(
+  "ECM" = c("NFATC2", "EMP1", "SAMD4A", "LMNA", "RTN4"),
+  "Axonogenesis" = c("SCN7A", "ADAM23", "EPB41L4B", "PIK3R1", "CNTN1"),
+  "Myelinating" = c("MLIP", "MPZ", "PRX", "NFASC", "NRG1"),
+  "repair-like" = c("NGFR", "RUNX2", "GRIK2", "NTRK3", "PTPRZ1"),
+  "hypoxia" = c("VEGFA", "RUNX2", "COL11A1", "NR3C2", "RPS27L"),
+  "IFN-response" = c("MX2", "IFI44L", "MX1", "DDX58", "IFIT3"),
+  "MHC-II" = c("APOE", "HLA-DRA", "CD74", "HLA-DPB1", "HLA-DPA1"),
+  "Proliferation" = c("DIAPH3", "ARHGAP11B", "APOLD1", "CENPF", "EZH2")
+)
+all_markers <- unique(unlist(marker_genes_list))
+genes_in_NC <- all_markers[all_markers %in% rownames(NC_data)]
+genes_not_in_NC <- all_markers[!all_markers %in% rownames(NC_data)]
+print(paste("Marker genes present in NC:", length(genes_in_NC)))
+if (length(genes_not_in_NC) > 0) print(genes_not_in_NC)
+
+if (is.null(NC_data[["umap"]])) {
+  NC_data <- NormalizeData(NC_data, verbose = FALSE)
+  NC_data <- FindVariableFeatures(NC_data, selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+  NC_data <- ScaleData(NC_data, verbose = FALSE)
+  NC_data <- RunPCA(NC_data, npcs = 30, verbose = FALSE)
+  NC_data <- RunUMAP(NC_data, dims = 1:30, reduction = "pca", verbose = FALSE)
+}
+
+feature_genes <- c("SCN7A", "MPZ", "NGFR", "CD74", "VEGFA", "MX1")
+feature_genes <- feature_genes[feature_genes %in% rownames(NC_data)]
+if (length(feature_genes) > 0) {
+  p1 <- FeaturePlot(NC_data, features = feature_genes, reduction = "umap", ncol = 3, pt.size = 0.5, order = TRUE) +
+    plot_annotation(title = "Marker gene expression in NC dataset")
+  print(p1)
+}
+
+if (!"predicted.id" %in% colnames(NC_data@meta.data)) {
+  tryCatch({
+    NC_data <- FindNeighbors(NC_data, reduction = "pca", dims = 1:30, verbose = FALSE)
+    NC_data <- FindClusters(NC_data, resolution = 0.5, verbose = FALSE)
+    group_by_col <- "seurat_clusters"
+  }, error = function(e) {
+    NC_data$temp_group <- "All_Cells"
+    group_by_col <- "temp_group"
+  })
+} else {
+  group_by_col <- "predicted.id"
+}
+if (!group_by_col %in% colnames(NC_data@meta.data)) {
+  NC_data$temp_group <- "All_Cells"
+  group_by_col <- "temp_group"
+}
+
+markers_in_NC <- all_markers[all_markers %in% rownames(NC_data)]
+if (length(markers_in_NC) > 0) {
+  if (length(markers_in_NC) > 30) {
+    selected_markers <- unlist(lapply(marker_genes_list, function(x) {
+      genes <- x[x %in% rownames(NC_data)]
+      if (length(genes) > 3) return(genes[1:3]) else return(genes)
+    }))
+    selected_markers <- unique(selected_markers)
+  } else {
+    selected_markers <- markers_in_NC
+  }
+  p2 <- DotPlot(NC_data, features = selected_markers, group.by = group_by_col) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+          axis.text.y = element_text(size = 8),
+          plot.title = element_text(hjust = 0.5, size = 14)) +
+    labs(title = "Marker gene expression in NC dataset", x = "Marker genes", y = group_by_col) +
+    scale_color_gradientn(colors = c("lightgrey", "blue", "red"), guide = guide_colorbar(title = "Avg expression"))
+  print(p2)
+}
+
+gene_overlap <- data.frame(
+  Subtype = names(marker_genes_list),
+  Total_Genes = sapply(marker_genes_list, length),
+  Genes_in_NC = sapply(marker_genes_list, function(x) sum(x %in% rownames(NC_data))),
+  Overlap_Rate = sapply(marker_genes_list, function(x) {
+    total <- length(x)
+    if (total > 0) return(paste0(round(sum(x %in% rownames(NC_data))/total * 100, 1), "%")) else return("0%")
+  })
+)
+print(gene_overlap)
+
+p3 <- ggplot(gene_overlap, aes(x = Subtype, y = Genes_in_NC, fill = Subtype)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(Genes_in_NC, "/", Total_Genes)), vjust = -0.5, size = 3) +
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none",
+                          plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Marker gene coverage in NC dataset", x = "Subtype", y = "Gene count")
+print(p3)
+
+repair_genes <- c("NGFR", "RUNX2", "SPP1", "GAP43", "NTRK3", "PTPRZ1")
+repair_genes <- repair_genes[repair_genes %in% rownames(NC_data)]
+if (length(repair_genes) > 0) {
+  p4 <- FeaturePlot(NC_data, features = repair_genes, reduction = "umap", ncol = 3, pt.size = 0.5, order = TRUE) +
+    plot_annotation(title = "Repair-like markers in NC")
+  print(p4)
+}
+mhc_genes <- c("CD74", "HLA-DRA", "HLA-DPB1", "HLA-DPA1", "APOE")
+mhc_genes <- mhc_genes[mhc_genes %in% rownames(NC_data)]
+if (length(mhc_genes) > 0) {
+  p5 <- FeaturePlot(NC_data, features = mhc_genes, reduction = "umap", ncol = 3, pt.size = 0.5, order = TRUE) +
+    plot_annotation(title = "MHC-II markers in NC")
+  print(p5)
+}
+myelinating_genes <- c("MPZ", "PRX", "MLIP", "NFASC", "NRG1")
+myelinating_genes <- myelinating_genes[myelinating_genes %in% rownames(NC_data)]
+if (length(myelinating_genes) > 0) {
+  p6 <- FeaturePlot(NC_data, features = myelinating_genes, reduction = "umap", ncol = 3, pt.size = 0.5, order = TRUE) +
+    plot_annotation(title = "Myelinating markers in NC")
+  print(p6)
+}
+
+for (subtype in names(marker_genes_list)) {
+  genes <- marker_genes_list[[subtype]]
+  genes <- genes[genes %in% rownames(NC_data)]
+  if (length(genes) >= 3) {
+    NC_data <- AddModuleScore(NC_data, features = list(genes), name = paste0(subtype, "_Score"))
+  }
+}
+score_cols <- grep("_Score", colnames(NC_data@meta.data), value = TRUE)
+if (length(score_cols) > 0) {
+  for (col in score_cols[1:min(4, length(score_cols))]) {
+    subtype_name <- gsub("_Score", "", col)
+    p <- FeaturePlot(NC_data, features = col, reduction = "umap", pt.size = 0.5, order = TRUE) +
+      scale_color_gradientn(colors = c("lightgrey", "yellow", "red"), name = "Module Score") +
+      labs(title = paste0(subtype_name, " module score"))
+    print(p)
+  }
+}
+
+write.csv(gene_overlap, "./output/marker_gene_overlap_NC.csv", row.names = FALSE)
+if (length(genes_not_in_NC) > 0) {
+  write.csv(data.frame(Genes_not_in_NC = genes_not_in_NC), "./output/genes_not_in_NC.csv", row.names = FALSE)
+}
+sessionInfo()
+
+# -------------------- 22. Monocle2 trajectory --------------------
+library(monocle)
+library(viridis)
+library(AnnotationDbi)
+library(Matrix)
+
+seurat_obj <- data   # re-use 'data' object
+cds <- newCellDataSet(GetAssayData(seurat_obj, assay = "RNA", slot = "counts"),
+                      phenoData = new("AnnotatedDataFrame", data = seurat_obj@meta.data),
+                      featureData = new("AnnotatedDataFrame", data = data.frame(gene_short_name = rownames(seurat_obj), row.names = rownames(seurat_obj))),
+                      expressionFamily = negbinomial.size())
+cds <- estimateSizeFactors(cds)
+cds <- estimateDispersions(cds)
+cds <- detectGenes(cds, min_expr = 0.1)
+cds <- setOrderingFilter(cds, all.markers$gene)   # all.markers from earlier
+
+cds <- reduceDimension(cds, max_components = 2, reduction_method = 'DDRTree', norm_method = "log",
+                       pseudo_expr = 1, verbose = TRUE, auto_param_selection = TRUE)
+cds <- orderCells(cds)
+
+p1 <- plot_cell_trajectory(cds, color_by = "Pseudotime", cell_size = 1) + scale_color_viridis_c() + ggtitle("Pseudotime trajectory")
+p2 <- plot_cell_trajectory(cds, color_by = "celltype2", cell_size = 1) + facet_wrap(~cluster, nrow = 1) +
+  scale_color_manual(values = c("#B2DF8A","#1F78B4","#6A3D9A","#33A02C","#FDBF6F","#FB9A99","#E31A1C","#A6CEE3","#FF7F00"))
+p7 <- plot_complex_cell_trajectory(cds, color_by = "celltype2", cell_size = 1) + facet_wrap(~cluster, nrow = 1) +
+  scale_color_manual(values = c("#B2DF8A","#1F78B4","#6A3D9A","#33A02C","#FDBF6F","#FB9A99","#E31A1C","#A6CEE3","#FF7F00"))
+p2 + p7
+
+p3 <- plot_cell_trajectory(cds, color_by = "has_22q_deletion", cell_size = 1) + ggtitle("Deletion status")
+p4 <- plot_cell_trajectory(cds, color_by = "has_22q_deletion", cell_size = 1) + facet_wrap(~celltype2, nrow = 1)
+p8 <- plot_complex_cell_trajectory(cds, color_by = "has_22q_deletion", cell_size = 1) + facet_wrap(~celltype2, nrow = 1)
+p4 + p8
+
+p4 <- plot_cell_trajectory(cds, color_by = "Pseudotime", cell_size = 1) + facet_wrap(~cluster, nrow = 1) + scale_color_viridis_c()
+library(patchwork)
+combined_plot <- (p1 | p2) / p4
+combined_plot + plot_annotation(tag_levels = 'A')
+
+setwd("./output/")   # change to output for saving
+write.csv(pData(cds), "./output/pseudotime-SC.csv")
+saveRDS(cds, "./output/monocle_trajectory_result-Tcell.rds")
+
+library(ggpubr)
+df <- pData(cds)
+ggplot(df, aes(Pseudotime, colour = subtype, fill = subtype)) + geom_density(bw = 0.5, size = 1, alpha = 0.5) + theme_classic2() +
+  scale_color_manual(name = "", values = c("#B2DF8A","#1F78B4","#6A3D9A","#33A02C","#FDBF6F","#FB9A99","#E31A1C","#A6CEE3","#FF7F00")) +
+  scale_fill_manual(name = "", values = c("#B2DF8A","#1F78B4","#6A3D9A","#33A02C","#FDBF6F","#FB9A99","#E31A1C","#A6CEE3","#FF7F00"))
+
+ggplot(df, aes(Pseudotime, colour = has_22q_deletion, fill = has_22q_deletion)) + geom_density(bw = 0.5, size = 1, alpha = 0.5) + theme_classic2() +
+  scale_color_manual(name = "", values = c("Yes" = "red", "No" = "blue")) +
+  scale_fill_manual(name = "", values = c("Yes" = "red", "No" = "blue"))
+
+# ---- Differential genes along pseudotime ----
+test <- cds
+expressed_genes <- row.names(subset(fData(test), num_cells_expressed >= 10))
+pseudotime_de <- differentialGeneTest(test, fullModelFormulaStr = "~sm.ns(Pseudotime)")
+pseudotime_de <- pseudotime_de[order(pseudotime_de$qval), ]
+states_de <- differentialGeneTest(test, fullModelFormulaStr = "~State")
+states_de <- states_de[order(states_de$qval), ]     
+saveRDS(test, file = "./output/test_monocle.rds")
+write.table(pseudotime_de, file = "./output/pseudotime_de.rds", quote = FALSE, sep = '\t', row.names = FALSE, col.names = TRUE)
+write.table(states_de, file = "./output/states_de.rds", quote = FALSE, sep = '\t', row.names = FALSE, col.names = TRUE)
+
+# ---- Branch analysis ----
+BEAM_res <- BEAM(test, branch_point = 1, cores = 1, progenitor_method = "duplicate")
+BEAM_res <- BEAM_res[, c("gene_short_name","pval","qval")]
+saveRDS(BEAM_res, file = "./output/BEAM_res.rds")
+
+tmp1 <- plot_genes_branched_heatmap(
+  test[row.names(subset(BEAM_res, qval < 1e-4)), ],
+  branch_point = 1,
+  num_clusters = 3,
+  cores = 1,
+  branch_labels = c("Cell fate 1", "Cell fate 2"),
+  hmcols = colorRampPalette(rev(brewer.pal(9, "PRGn")))(62),
+  branch_colors = c("#979797", "#F05662", "#7990C8"),
+  use_gene_short_name = TRUE,
+  show_rownames = FALSE,
+  return_heatmap = TRUE
+)
+pdf("./output/branched_heatmap.pdf", width = 5, height = 6)
+tmp1$ph_res
+dev.off()
+
+sig_genes <- subset(BEAM_res, qval < 0.05)
+sig_genes <- sig_genes[order(sig_genes$qval), ]
+write.csv(sig_genes, file = "./output/branch_point_significant_genes.csv")
+gene_info <- data.frame(
+  gene_id = rownames(sig_genes),
+  gene_short_name = rowData(cds)[rownames(sig_genes), "gene_short_name"],
+  qval = sig_genes$qval
+)
+write.csv(gene_info, file = "./output/branch_point_genes_simple.csv")
+
+top_genes <- rownames(sig_genes)[1:30]
+pdf("./output/top_branch_genes_expression-1018.pdf", width = 10, height = 8)
+plot_genes_branched_pseudotime(cds[top_genes, ], branch_point = 1, color_by = "Pseudotime", ncol = 4)
+dev.off()
+
+test_genes <- c("HIF1A","CD86","CD163","CD68","CSF1R","VEGFA","MRC1","MSR1","CD83","SPP1")
+pdf("./output/genes_branched_pseudotime.pdf", width = 9, height = 4)
+plot_genes_branched_pseudotime(test[test_genes, ], branch_point = 1, color_by = "subtype", cell_size = 2, ncol = 2) +
+  scale_color_manual(values = c("#B2DF8A","#1F78B4","#6A3D9A","#33A02C","#FDBF6F","#FB9A99","#E31A1C","#A6CEE3","#FF7F00"))
+dev.off()
+
+library(RColorBrewer)
+p <- plot_pseudotime_heatmap(test[row.names(subset(states_de, qval < 1e-7)), ], num_clusters = 3,
+                             cores = 1, show_rownames = FALSE, return_heatmap = TRUE,
+                             hmcols = colorRampPalette(rev(brewer.pal(9,"PRGn")))(100))
+row_cluster <- cutree(p$tree_row, k = 3)
+cluster_genes <- data.frame(Gene = names(row_cluster), Cluster = row_cluster)
+for (cluster_id in unique(cluster_genes$Cluster)) {
+  genes_in_cluster <- cluster_genes$Gene[cluster_genes$Cluster == cluster_id]
+  write.table(genes_in_cluster, file = paste0("./output/cluster_", cluster_id, "_genes.txt"),
+              row.names = FALSE, col.names = FALSE, quote = FALSE)
+}
+genes_in_cluster1 <- cluster_genes$Gene[cluster_genes$Cluster == 3]
+gene_entrez <- bitr(genes_in_cluster1, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = "org.Hs.eg.db")
+ego <- enrichGO(gene = gene_entrez$ENTREZID, OrgDb = org.Hs.eg.db, keyType = "ENTREZID",
+                ont = "BP", pAdjustMethod = "BH", pvalueCutoff = 0.1, qvalueCutoff = 0.2, readable = TRUE)
+write.csv(ego, file = "./output/GO_results_cluster3.csv")
+
+# -------------------- 23. Slingshot trajectory --------------------
+library(slingshot)
+seu_sc <- readRDS("./data/NC_data_with_labels.RDS")   # user must have this file
+subtype_col <- "subtype"
+cell_groups <- as.character(seu_sc@meta.data[[subtype_col]])
+pca_coords <- Embeddings(seu_sc, reduction = "pca")[, 1:20]
+umap_coords <- Embeddings(seu_sc, reduction = "umap")
+var_features <- VariableFeatures(seu_sc)
+if (is.null(var_features) || length(var_features) == 0) {
+  seu_sc <- FindVariableFeatures(seu_sc, selection.method = "vst", nfeatures = 3000)
+  var_features <- VariableFeatures(seu_sc)
+}
+selected_genes <- var_features[1:min(3000, length(var_features))]
+expr_sparse <- GetAssayData(seu_sc, slot = "data", assay = "RNA")[selected_genes, ]
+expr_t <- Matrix::t(expr_sparse)
+
+root_cluster <- sort(unique(cell_groups))[4]
+sling_result <- slingshot(data = pca_coords, clusterLabels = cell_groups,
+                          start.clus = root_cluster, shrink = 0, stretch = 2,
+                          smoother = "loess", reweight = TRUE, reassign = TRUE)
+pseudotime_sling <- slingPseudotime(sling_result)
+if (is.matrix(pseudotime_sling)) {
+  pt_avg <- rowMeans(pseudotime_sling, na.rm = TRUE)
+} else {
+  pt_avg <- pseudotime_sling
+}
+seu_sc$slingshot_pseudotime <- pt_avg
+
+p_pseudo <- FeaturePlot(seu_sc, features = "slingshot_pseudotime", reduction = "umap",
+                        cols = viridis(100, option = "C")) +
+  ggtitle("Slingshot Cyclic Pseudotime")
+ggsave("./output/Slingshot_Pseudotime_UMAP-TC.pdf", p_pseudo, width = 7, height = 6, dpi = 300)
+
+# Comparison with Monocle
+possible_pseudo <- grep("pseudotime|monocle", colnames(seu_sc@meta.data), value = TRUE, ignore.case = TRUE)
+if (length(possible_pseudo) > 0) {
+  seu_sc$monocle2 <- seu_sc@meta.data[[possible_pseudo[1]]]
+  p_mono <- FeaturePlot(seu_sc, features = "monocle2", reduction = "umap", cols = viridis(100, option = "C")) +
+    ggtitle("Monocle2 (Divergent)")
+  p_sling <- FeaturePlot(seu_sc, features = "slingshot_pseudotime", reduction = "umap", cols = viridis(100, option = "C")) +
+    ggtitle("Slingshot (Cyclic)")
+  ggsave("./output/Monocle2_vs_Slingshot.pdf", p_mono + p_sling, width = 12, height = 5, dpi = 300)
+}
+
+pt_cyclic <- (seu_sc$slingshot_pseudotime - min(seu_sc$slingshot_pseudotime, na.rm = TRUE)) /
+             (max(seu_sc$slingshot_pseudotime, na.rm = TRUE) - min(seu_sc$slingshot_pseudotime, na.rm = TRUE))
+gene_cor <- apply(expr_t, 2, function(x) cor(x, pt_cyclic, use = "complete.obs"))
+top_genes <- names(sort(abs(gene_cor), decreasing = TRUE))[1:6]
+dyn_df <- data.frame(cell_id = colnames(seu_sc), pseudotime = pt_cyclic, cell_group = cell_groups)
+for (g in top_genes) if (g %in% colnames(expr_t)) dyn_df[[g]] <- as.numeric(expr_t[, g])
+dyn_df_long <- dyn_df %>% pivot_longer(cols = all_of(intersect(top_genes, colnames(dyn_df))), names_to = "gene", values_to = "expression")
+p_genes <- ggplot(dyn_df_long, aes(x = pseudotime, y = expression, color = cell_group)) +
+  geom_point(alpha = 0.3, size = 0.8) +
+  geom_smooth(method = "loess", se = TRUE, aes(group = 1), color = "black", linewidth = 0.8) +
+  facet_wrap(~gene, scales = "free_y", ncol = 3) +
+  scale_x_continuous(breaks = c(0, 0.25, 0.5, 0.75, 1), labels = c("Start","Q1","Mid","Q3","End/Start")) +
+  labs(title = "Gene Dynamics Along Cyclic Pseudotime", x = "Cyclic Pseudotime", y = "Expression") +
+  theme_minimal() + theme(strip.text = element_text(face = "bold", size = 10), legend.position = "bottom")
+ggsave("./output/Cyclic_Gene_Dynamics-TC.pdf", p_genes, width = 12, height = 8, dpi = 300)
+
+saveRDS(seu_sc, "./output/NF2-SVS_scRNAseq-TC_slingshot.rds")
+saveRDS(sling_result, "./output/Slingshot_Cyclic_Model-TC.rds")
+write.csv(data.frame(cell_id = colnames(seu_sc), cell_group = cell_groups,
+                     slingshot_pseudotime = seu_sc$slingshot_pseudotime,
+                     cyclic_pseudotime = pt_cyclic),
+          "./output/Slingshot_Pseudotime-TC.csv", row.names = FALSE)
+
+# -------------------- 24. CellChat analysis --------------------
+library(CellChat)
+library(ggalluvial)
+library(NMF)
+library(ComplexHeatmap)
+
+seurat_obj <- readRDS("./data/your_seurat_object.RDS")   # user-provided
+data.input <- GetAssayData(seurat_obj, assay = "RNA", slot = "data")
+meta <- seurat_obj@meta.data
+celltypes <- meta$clusterName
+
+cellchat <- createCellChat(object = data.input, meta = meta, group.by = "clusterName")
+CellChatDB <- CellChatDB.human
+cellchat <- setIdent(cellchat, ident.use = "clusterName") 
+cellchat@DB <- CellChatDB
+cellchat <- subsetData(cellchat)
+cellchat <- identifyOverExpressedGenes(cellchat)
+cellchat <- identifyOverExpressedInteractions(cellchat)
+cellchat <- computeCommunProb(cellchat, type = "truncatedMean", trim = 0.1)
+cellchat <- filterCommunication(cellchat, min.cells = 10)
+cellchat <- computeCommunProbPathway(cellchat)
+cellchat <- aggregateNet(cellchat)
+
+# Use a subset (Secreted Signaling)
+CellChatDB.use <- subsetDB(CellChatDB, search = "Secreted Signaling") 
+cellchat@DB <- CellChatDB.use 
+cellchat <- subsetData(cellchat)
+cellchat <- identifyOverExpressedGenes(cellchat)
+cellchat <- identifyOverExpressedInteractions(cellchat)
+cellchat <- computeCommunProb(cellchat)
+cellchat <- computeCommunProbPathway(cellchat)
+cellchat <- aggregateNet(cellchat)
+df.net <- subsetCommunication(cellchat)
+groupSize <- as.numeric(table(cellchat@idents))
+
+saveRDS(cellchat, "./output/cellchat.RDS")
+write.table(cellchat@LR$LRsig[cellchat@LR$LRsig$pathway_name %in% cellchat@netP$pathways, ],
+            "./output/signaling_pathway.xls", sep = "\t", row.names = FALSE)
+write.csv(df.net, './output/01.df.net.csv')
+
+# -------------------- End of script ----------------------------
+cat("All analyses completed. Results saved in ./output/\n")
