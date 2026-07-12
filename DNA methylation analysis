@@ -1,0 +1,113 @@
+# 1. Load packages
+library(minfi)
+library(IlluminaHumanMethylation450kmanifest)
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+library(sva)
+library(NMF)
+library(ConsensusClusterPlus)
+library(limma)
+library(missMethyl)
+library(org.Hs.eg.db)
+library(magrittr)   
+
+# 2. Set paths (modify these as needed)
+base_dir <- "./IDAT_files"          
+output_dir <- "./results"          
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+
+# 3. Read IDAT files
+targets <- read.metharray.sheet(base_dir)
+rg_set <- read.metharray.exp(targets = targets)
+
+# 4. Preprocessing (Noob + BMIQ)
+m_set <- preprocessNoob(rg_set)
+beta <- getBeta(m_set)
+m_vals <- getM(m_set)
+
+# 5. Remove SNP probes (MAF > 0.01)
+anno <- getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+snp_probes <- rownames(anno)[!is.na(anno$SNP_10) & anno$SNP_10 > 0.01]
+beta_clean <- beta[!(rownames(beta) %in% snp_probes), ]
+m_clean <- m_vals[!(rownames(m_vals) %in% snp_probes), ]
+
+# Remove sex chromosome probes (chrX and chrY)
+sex_probes <- rownames(anno)[anno$chr %in% c("chrX", "chrY")]
+beta_auto <- beta_clean[!(rownames(beta_clean) %in% sex_probes), ]
+m_auto <- m_clean[!(rownames(m_clean) %in% sex_probes), ]
+
+cat("Number of CpGs after removing sex chromosomes:", nrow(beta_auto), "\n")
+
+# 6. ComBat batch correction (based on M-values)
+#    Batch and group information are taken from SampleSheet if available;
+#    otherwise the hard-coded values below are used.
+if (all(c("Batch", "Group") %in% colnames(targets))) {
+  batch <- targets$Batch
+  group <- targets$Group
+} else {
+  warning("'Batch' or 'Group' not found in SampleSheet; using default values.")
+  batch <- c("Batch1","Batch1","Batch1","Batch1","Batch2","Batch2")
+  group <- c("NonV","NonV","NonV","NonV","N","N")
+}
+sample_info <- data.frame(
+  sample = colnames(m_clean),
+  batch = batch,
+  group = group
+)
+mod <- model.matrix(~ group, data = sample_info)
+m_combat <- ComBat(dat = m_clean, batch = sample_info$batch, mod = mod)
+
+# 7. NMF subtyping (K = 2)
+top_cpgs <- names(sort(apply(m_combat, 1, var), decreasing = TRUE))[1:5000]
+m_nmf <- m_combat[top_cpgs, ] - min(m_combat) + 0.001   
+set.seed(123)   
+nmf_res <- nmf(m_nmf, rank = 2, nrun = 50, method = "brunet", seed = "nndsvd")
+subtype_meth <- apply(basis(nmf_res), 1, which.max)
+
+# Save subtype assignments
+subtype_df <- data.frame(sample = names(subtype_meth), subtype = subtype_meth)
+write.csv(subtype_df, file = file.path(output_dir, "subtype_assignments.csv"),
+          row.names = FALSE)
+
+# 8. ConsensusClusterPlus validation (generates plots in output_dir)
+ccp_meth <- ConsensusClusterPlus(
+  t(m_nmf),
+  maxK = 6,
+  reps = 1000,
+  pItem = 0.8,
+  pFeature = 0.8,
+  distance = "euclidean",
+  clusterAlg = "hc",
+  title = file.path(output_dir, "ConsensusCluster_Methylation")
+)
+
+# 9. Differential methylation analysis (DMP) with limma
+design <- model.matrix(~ 0 + factor(subtype_meth))
+colnames(design) <- paste0("M", 1:2)
+contrast <- makeContrasts(M1-M2, levels = design)
+fit <- lmFit(m_combat, design) %>% contrasts.fit(contrast) %>% eBayes()
+dmp <- topTable(fit, number = 500, adjust.method = "BH", sort.by = "B")
+dmp$Gene <- anno[rownames(dmp), "UCSC_RefGene_Name"]
+dmp$Island <- anno[rownames(dmp), "Relation_to_Island"]
+
+# Write DMP results
+write.csv(dmp, file = file.path(output_dir, "DMP_results.csv"), row.names = TRUE)
+
+# 10. GSEA with missMethyl (GO and KEGG)
+sig_cpgs <- rownames(dmp)[dmp$adj.P.Val < 0.05]
+if (length(sig_cpgs) > 10) {
+  gsea_go <- gometh(sig.cpg = sig_cpgs, all.cpg = rownames(m_combat),
+                    collection = "GO", array.type = "450K")
+  gsea_kegg <- gometh(sig.cpg = sig_cpgs, all.cpg = rownames(m_combat),
+                      collection = "KEGG", array.type = "450K")
+  write.csv(gsea_go, file = file.path(output_dir, "GSEA_GO.csv"), row.names = FALSE)
+  write.csv(gsea_kegg, file = file.path(output_dir, "GSEA_KEGG.csv"), row.names = FALSE)
+} else {
+  cat("Fewer than 10 significant CpGs; skipping GSEA.\n")
+}
+
+# Save session information for reproducibility
+sink(file.path(output_dir, "session_info.txt"))
+sessionInfo()
+sink()
+
+cat("Analysis complete. All results saved in", output_dir, "\n")
